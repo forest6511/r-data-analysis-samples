@@ -11,12 +11,44 @@
 """
 import csv
 import datetime as dt
+import io
+import re
+import shutil
 import sqlite3
+import zipfile
 from pathlib import Path
 
 from openpyxl import Workbook
 
 HERE = Path(__file__).parent
+CH03 = HERE / "ch03"  # verify-code の検証フィクスチャ置き場（乖離防止のため同時更新する）
+
+# xlsx は ZIP コンテナで、openpyxl は書き込み時刻を各エントリに埋め込む。
+# バイト決定性のため、全エントリのタイムスタンプをこの固定値に正規化する
+FIXED_ZIP_DATETIME = (2026, 1, 1, 0, 0, 0)
+
+
+def save_xlsx_deterministic(wb: Workbook, path: Path) -> None:
+    wb.properties.created = dt.datetime(*FIXED_ZIP_DATETIME)
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    fixed_iso = dt.datetime(*FIXED_ZIP_DATETIME).strftime("%Y-%m-%dT%H:%M:%SZ")
+    with zipfile.ZipFile(buf) as src, zipfile.ZipFile(
+        path, "w", compression=zipfile.ZIP_DEFLATED
+    ) as dst:
+        for name in sorted(src.namelist()):
+            data = src.read(name)
+            if name == "docProps/core.xml":
+                # openpyxl は save 時に modified を現在時刻で上書きするため、ここで固定値に戻す
+                data = re.sub(
+                    rb"(<dcterms:modified[^>]*>)[^<]*(</dcterms:modified>)",
+                    lambda m: m.group(1) + fixed_iso.encode() + m.group(2),
+                    data,
+                )
+            info = zipfile.ZipInfo(name, date_time=FIXED_ZIP_DATETIME)
+            info.compress_type = zipfile.ZIP_DEFLATED
+            dst.writestr(info, data)
 
 # --- 元データ読み込み ---
 with open(HERE / "sales.csv", encoding="utf-8") as f:
@@ -57,7 +89,7 @@ for r in rows:
 for m in range(1, 13):
     ws3.append([m, monthly[m]])
 
-wb.save(HERE / "sales.xlsx")
+save_xlsx_deterministic(wb, HERE / "sales.xlsx")
 
 # --- sales.db ---
 db_path = HERE / "sales.db"
@@ -73,4 +105,12 @@ con.executemany("INSERT INTO stores VALUES (?, ?, ?)", stores_master)
 con.commit()
 con.close()
 
-print(f"{len(rows)} rows -> sales.xlsx / sales.db")
+# --- 検証フィクスチャ（samples/ch03/）へ同期 ---
+if CH03.is_dir():
+    shutil.copy2(HERE / "sales.xlsx", CH03 / "sales.xlsx")
+    shutil.copy2(HERE / "sales.db", CH03 / "sales.db")
+    synced = " (ch03/ へ同期済み)"
+else:
+    synced = ""
+
+print(f"{len(rows)} rows -> sales.xlsx / sales.db{synced}")
