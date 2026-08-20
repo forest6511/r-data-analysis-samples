@@ -1,0 +1,8 @@
+# 第8章のサンプルは「バイトの並び」そのものが教材なので、
+# git に改行コードや文字コードを変換させない。
+# CRLF → LF に正規化されると、本文の readBin() の出力と食い違う。
+uriage_cp932.csv    -text
+uriage_utf8.csv     -text
+uriage_utf8_bom.csv -text
+uriage_utf16le.csv  -text
+t_short.csv         -text
