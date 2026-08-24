@@ -6,3 +6,7 @@ uriage_utf8.csv     -text
 uriage_utf8_bom.csv -text
 uriage_utf16le.csv  -text
 t_short.csv         -text
+
+# uriage_2y.csv は Excel が書き出す CRLF のまま検証している。
+# LF に正規化されると第19〜22章の出力・図と食い違うため変換させない。
+uriage_2y.csv       -text
